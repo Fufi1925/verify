@@ -29,6 +29,38 @@ class Verified(db.Model):
     username = db.Column(db.String(100))
     verified_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# === SEND EMBED AUTOMATICALLY ===
+def post_verification_embed():
+    if not LOG_CHANNEL:
+        return
+    url = f"https://discord.com/api/channels/{LOG_CHANNEL}/messages"
+    headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    json = {
+        "username": "Botium",
+        "embeds": [
+            {
+                "title": "Verifizierung",
+                "description": "Klicke auf den Button unten, um dich zu verifizieren!",
+                "color": 5763719,
+                "footer": {"text": "Created by L"}
+            }
+        ],
+        "components": [
+            {
+                "type": 1,
+                "components": [
+                    {
+                        "type": 2,
+                        "label": "Verifizieren",
+                        "style": 5,  # Link-Button
+                        "url": f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds.join"
+                    }
+                ]
+            }
+        ]
+    }
+    requests.post(url, headers=headers, json=json)
+
 # === ROUTES ===
 @app.route("/")
 def home():
@@ -38,7 +70,7 @@ def home():
 @app.route("/login")
 def login():
     return redirect(
-        f"https://discord.com/api/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds.join"
+        f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&response_type=code&scope=identify%20guilds.join"
     )
 
 @app.route("/callback")
@@ -55,12 +87,13 @@ def callback():
         "redirect_uri": REDIRECT_URI,
     }
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    r = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
-    token_json = r.json()
+    token_res = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
+    token_json = token_res.json()
     access_token = token_json.get("access_token")
     if not access_token:
         return "Fehler beim Token", 400
 
+    # User info
     user = requests.get(
         "https://discord.com/api/users/@me",
         headers={"Authorization": f"Bearer {access_token}"}
@@ -68,7 +101,7 @@ def callback():
     user_id = user["id"]
     username = f'{user["username"]}#{user["discriminator"]}'
 
-    # Server join
+    # User automatisch in Server hinzufügen
     requests.put(
         f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}",
         headers={"Authorization": f"Bot {BOT_TOKEN}"},
@@ -81,29 +114,27 @@ def callback():
     requests.delete(f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_REMOVE}",
                     headers={"Authorization": f"Bot {BOT_TOKEN}"})
 
-    # Datenbank speichern
+    # DB speichern
     if not Verified.query.get(user_id):
         new_user = Verified(id=user_id, username=username)
         db.session.add(new_user)
         db.session.commit()
 
-    # Logging Embed
+    # Log-Channel Embed
     if LOG_CHANNEL:
-        requests.post(
-            f"https://discord.com/api/channels/{LOG_CHANNEL}/messages",
-            headers={"Authorization": f"Bot {BOT_TOKEN}"},
-            json={
-                "username": "Botium",
-                "embeds": [
-                    {
-                        "title": "✅ Neue Verifizierung",
-                        "description": f"{username} hat sich erfolgreich verifiziert",
-                        "color": 5763719,
-                        "footer": {"text": "Created by L"}
-                    }
-                ]
-            }
-        )
+        log_json = {
+            "username": "Botium",
+            "embeds": [
+                {
+                    "title": "✅ Neue Verifizierung",
+                    "description": f"{username} hat sich erfolgreich verifiziert",
+                    "color": 5763719,
+                    "footer": {"text": "Created by L"}
+                }
+            ]
+        }
+        requests.post(f"https://discord.com/api/channels/{LOG_CHANNEL}/messages",
+                      headers={"Authorization": f"Bot {BOT_TOKEN}"}, json=log_json)
 
     return redirect("/success")
 
@@ -120,4 +151,5 @@ def admin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
+        post_verification_embed()  # Embed wird automatisch gepostet, wenn der Server startet
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
