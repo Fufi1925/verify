@@ -3,9 +3,11 @@ import requests
 from flask import Flask, request, redirect, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 db = SQLAlchemy(app)
 
@@ -14,10 +16,10 @@ CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-
-ROLE_ADD = "1329866183457116190"
-ROLE_REMOVE = "1472623161244909779"
 LOG_CHANNEL = os.getenv("LOG_CHANNEL")
+
+ROLE_ADD = os.getenv("ROLE_ADD")
+ROLE_REMOVE = os.getenv("ROLE_REMOVE")
 
 class Verified(db.Model):
     id = db.Column(db.String(50), primary_key=True)
@@ -38,6 +40,8 @@ def login():
 @app.route("/callback")
 def callback():
     code = request.args.get("code")
+    if not code:
+        return "Fehler: Kein Code erhalten.", 400
 
     data = {
         "client_id": CLIENT_ID,
@@ -48,10 +52,11 @@ def callback():
     }
 
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
     r = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
     token_json = r.json()
     access_token = token_json.get("access_token")
+    if not access_token:
+        return "Fehler beim Abrufen des Tokens.", 400
 
     user = requests.get(
         "https://discord.com/api/users/@me",
@@ -61,7 +66,7 @@ def callback():
     user_id = user["id"]
     username = f'{user["username"]}#{user["discriminator"]}'
 
-    # User joinen
+    # User zum Server hinzufügen
     requests.put(
         f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}",
         headers={"Authorization": f"Bot {BOT_TOKEN}"},
@@ -80,7 +85,7 @@ def callback():
         headers={"Authorization": f"Bot {BOT_TOKEN}"}
     )
 
-    # Speichern in Datenbank
+    # In Datenbank speichern
     if not Verified.query.get(user_id):
         new_user = Verified(id=user_id, username=username)
         db.session.add(new_user)
@@ -104,4 +109,4 @@ def admin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
