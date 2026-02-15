@@ -1,0 +1,6 @@
+<h1>Verifizierte User</h1>
+<ul>
+{% for user in users %}
+<li>{{ user.username }} - {{ user.verified_at }}</li>
+{% endfor %}
+</ul>
