@@ -1,31 +1,35 @@
 import os
 import requests
-from flask import Flask, request, redirect, render_template
+from flask import Flask, redirect, render_template
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
-db = SQLAlchemy(app)
-
+# === ENV VARS ===
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GUILD_ID = os.getenv("GUILD_ID")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 LOG_CHANNEL = os.getenv("LOG_CHANNEL")
-
 ROLE_ADD = os.getenv("ROLE_ADD")
 ROLE_REMOVE = os.getenv("ROLE_REMOVE")
 
+# === FLASK INIT ===
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+
+# === DATABASE ===
 class Verified(db.Model):
     id = db.Column(db.String(50), primary_key=True)
     username = db.Column(db.String(100))
     verified_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# === ROUTES ===
 @app.route("/")
 def home():
     count = Verified.query.count()
@@ -41,7 +45,7 @@ def login():
 def callback():
     code = request.args.get("code")
     if not code:
-        return "Fehler: Kein Code erhalten.", 400
+        return "Fehler: Kein Code erhalten", 400
 
     data = {
         "client_id": CLIENT_ID,
@@ -50,55 +54,61 @@ def callback():
         "code": code,
         "redirect_uri": REDIRECT_URI,
     }
-
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     r = requests.post("https://discord.com/api/oauth2/token", data=data, headers=headers)
     token_json = r.json()
     access_token = token_json.get("access_token")
     if not access_token:
-        return "Fehler beim Abrufen des Tokens.", 400
+        return "Fehler beim Token", 400
 
     user = requests.get(
         "https://discord.com/api/users/@me",
         headers={"Authorization": f"Bearer {access_token}"}
     ).json()
-
     user_id = user["id"]
     username = f'{user["username"]}#{user["discriminator"]}'
 
-    # User zum Server hinzufügen
+    # Server join
     requests.put(
         f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}",
         headers={"Authorization": f"Bot {BOT_TOKEN}"},
-        json={"access_token": access_token},
+        json={"access_token": access_token}
     )
 
-    # Rolle hinzufügen
-    requests.put(
-        f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_ADD}",
-        headers={"Authorization": f"Bot {BOT_TOKEN}"}
-    )
+    # Rolle hinzufügen / alte entfernen
+    requests.put(f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_ADD}",
+                 headers={"Authorization": f"Bot {BOT_TOKEN}"})
+    requests.delete(f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_REMOVE}",
+                    headers={"Authorization": f"Bot {BOT_TOKEN}"})
 
-    # Alte Rolle entfernen
-    requests.delete(
-        f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_REMOVE}",
-        headers={"Authorization": f"Bot {BOT_TOKEN}"}
-    )
-
-    # In Datenbank speichern
+    # Datenbank speichern
     if not Verified.query.get(user_id):
         new_user = Verified(id=user_id, username=username)
         db.session.add(new_user)
         db.session.commit()
 
-    # Logging
+    # Logging Embed
     if LOG_CHANNEL:
         requests.post(
             f"https://discord.com/api/channels/{LOG_CHANNEL}/messages",
             headers={"Authorization": f"Bot {BOT_TOKEN}"},
-            json={"content": f"✅ {username} wurde verifiziert."}
+            json={
+                "username": "Botium",
+                "embeds": [
+                    {
+                        "title": "✅ Neue Verifizierung",
+                        "description": f"{username} hat sich erfolgreich verifiziert",
+                        "color": 5763719,
+                        "footer": {"text": "Created by L"}
+                    }
+                ]
+            }
         )
 
+    return redirect("/success")
+
+@app.route("/success")
+def success():
     return render_template("success.html")
 
 @app.route("/admin")
@@ -106,6 +116,7 @@ def admin():
     users = Verified.query.all()
     return render_template("admin.html", users=users)
 
+# === MAIN ===
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
