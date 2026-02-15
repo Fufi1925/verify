@@ -3,13 +3,19 @@
 <head>
 <title>Verify</title>
 <style>
-body {background:#0f172a;color:white;text-align:center;font-family:sans-serif;}
-button {padding:15px 40px;font-size:18px;background:#5865F2;color:white;border:none;border-radius:8px;}
+body {background:#0f172a;color:white;font-family:sans-serif;text-align:center;padding-top:80px;}
+h1 {font-size:36px;margin-bottom:20px;}
+p {font-size:20px;margin-bottom:40px;}
+button {padding:15px 50px;font-size:18px;background:#5865F2;color:white;border:none;border-radius:10px;cursor:pointer;}
+button:hover {background:#4752c4;}
+.container {max-width:600px;margin:auto;}
 </style>
 </head>
 <body>
+<div class="container">
 <h1>Server Verifizierung</h1>
 <p>Bereits verifiziert: {{ count }}</p>
 <a href="/login"><button>Mit Discord verifizieren</button></a>
+</div>
 </body>
 </html>
